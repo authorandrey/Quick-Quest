@@ -1,0 +1,308 @@
+﻿#include <iostream>
+#include <cstring>
+#include <algorithm>
+#include <SFML/Graphics.hpp>
+#include <SFML/Audio/Sound.hpp>
+#include <SFML/Audio/SoundBuffer.hpp>
+
+using namespace sf;
+
+//For sprites: buttons, inputs, etc.
+class Object {
+public:
+    Texture texture;
+    Sprite sprite;
+};
+
+void Restart(std::wstring& player_answer, unsigned short& player_wins, unsigned short *is_answer_true, 
+    unsigned short amount_of_stations, bool& is_changing_station_enabled, unsigned short* lives_per_task);
+void LoseTry(unsigned short& is_answer_true, Sound &lose_try_sound, bool is_out_of_lives, unsigned short& lives_per_answer);
+void WinTry(unsigned short& is_answer_true, Sound& win_try_sound, unsigned short& player_wins, std::wstring& player_answer);
+
+int main() {
+    //Remained tries
+    const unsigned short amount_of_stations = 6;
+    //Stations: 0 - alpha, 1 - betta, 2 - gamma, 3 - epsilon, 4 - lambda, 5 - omega
+    unsigned short current_station = 0;
+    //Player info
+    unsigned short player_wins = 0;
+    bool is_changing_station_enabled = true;
+    //Answer
+    std::wstring answers[6][5] = { {L"3343348163431343", L"РОССИЯ", L"КАФЕГЛОРИЯ", L"СТАДИОНМАЯК", L"УЛИЦАМИРА"},
+                                {L"СДЗИКЗД.", L"СНВАЭПЭЯНЛНЭ.", L"ЗАЩИТАБРЕСТСКОЙКРЕПОСТИ", L"ЕВПАТИЙКОЛОВРАТ", L"ПЕРЕСВЕТ"},
+                                {L"", L"LEARNING", L"РОДИНАМОЯ", L"", L""},
+                                {L"БЕРЕГИ", L"ЗЕМЛЮ", L"РОДИМУЮ", L"КАКМАТЬ", L"ЛЮБИМУЮ"},
+                                {L"ДЛЯДРУЖБЫНЕТРАССТОЯНИЙ", 
+                                    L"ВЕРНОМУДРУГУЦЕНЫНЕТ", 
+                                    L"БЕЗДРУГАВЖИЗНИТУГО.", 
+                                    L"БЕРИСЬДРУЖНО-НЕБУДЕТГРУЗНО.", 
+                                    L"ЛЕГЧЕДРУГАПОТЕРЯТЬ,ЧЕМНАЙТИ."},
+                                {L"НЛЭРОРЭ", L"СОАЕОР", L"НАХИМОВ", L"ОЛЕГВЕЩИЙ", L"АЛЕКСАНДРНЕВСКИЙ"} };
+    std::wstring player_answer;
+    std::wstring formalised_player_answer;
+    wchar_t stations_letters[] = L"αβγελω";
+    //0 - answer is false, 1 - answer is true, 2 - answer is undefined
+    unsigned short is_answer_true[5] = {2, 2, 2, 2, 2};
+    unsigned short lives_per_task[5] = {2, 2, 2, 2, 2};
+
+    ContextSettings textures_settings;
+    textures_settings.antialiasingLevel = 8;
+
+    RenderWindow window(VideoMode(800, 600), "Competiton", Style::Close, textures_settings);
+    window.setFramerateLimit(60);
+
+    Object restart_button;
+    if (!restart_button.texture.loadFromFile("./Files/Textures/restart_texture_tr.png"))
+        return -1;
+    restart_button.sprite.setTexture(restart_button.texture);
+    restart_button.sprite.setPosition(770, 0);
+
+    Object background;
+    if (!background.texture.loadFromFile("./Files/Textures/background_hacker.png"))
+        return -1;
+    background.sprite.setTexture(background.texture);
+    background.sprite.setPosition(-1, -1);
+
+    Object station_changing_arrow;
+    if (!station_changing_arrow.texture.loadFromFile("./Files/Textures/station_changing_arrow.png"))
+        return -1;
+    station_changing_arrow.sprite.setTexture(station_changing_arrow.texture);
+
+    Object heart;
+    if (!heart.texture.loadFromFile("./Files/Textures/heart.png"))
+        return -1;
+    heart.sprite.setTexture(heart.texture);
+
+    CircleShape room_choose(35.f);
+    room_choose.setFillColor(Color(158, 158, 158));
+    room_choose.setPosition(45, 15);
+
+    CircleShape answer_confirm_button(45.f);
+    answer_confirm_button.setFillColor(Color(158, 158, 158));
+
+    CircleShape player_answer_input_1(100.f);
+    player_answer_input_1.setFillColor(Color(158, 158, 158));
+    player_answer_input_1.setPosition(20, 170);
+    CircleShape player_answer_input_2(100.f);
+    player_answer_input_2.setFillColor(Color(158, 158, 158));
+    player_answer_input_2.setPosition(580, 170);
+    RectangleShape player_answer_input_3(Vector2f(560.f, 200.f));
+    player_answer_input_3.setFillColor(Color(158, 158, 158));
+    player_answer_input_3.setPosition(120, 170);
+
+
+    Font font;
+    if (!font.loadFromFile("./Files/ComicSansMS.ttf"))
+        return -1;
+
+    Text input_text;
+    input_text.setFont(font);
+    input_text.setCharacterSize(50);
+    input_text.setFillColor(Color::Black);
+    input_text.setPosition(90, 150);
+
+    Text station_text;
+    station_text.setFont(font);
+    station_text.setCharacterSize(70);
+    station_text.setFillColor(Color::Black);
+
+    Text task_number_text;
+    task_number_text.setFont(font);
+    task_number_text.setCharacterSize(50);
+    task_number_text.setFillColor(Color(158, 158, 158, 200));
+
+    SoundBuffer lose_try_buffer;
+    if (!lose_try_buffer.loadFromFile("./Files/lose_try_sound.wav"))
+        return -1;
+    Sound lose_try_sound;
+    lose_try_sound.setBuffer(lose_try_buffer);
+
+    SoundBuffer win_try_buffer;
+    if (!win_try_buffer.loadFromFile("./Files/win_try_sound.wav"))
+        return -1;
+    Sound win_try_sound;
+    win_try_sound.setBuffer(win_try_buffer);
+
+    SoundBuffer total_sound_buffer;
+    Sound total_sound;
+
+    //Main loop
+    while (window.isOpen()) {
+
+        //Event catcher
+        Event event;
+        while (window.pollEvent(event)) {
+            if (event.type == Event::Closed)
+                window.close();
+
+            if (event.type == Event::MouseButtonPressed) {
+                if (Mouse::isButtonPressed(Mouse::Left)) {
+                    //Restart button click
+                    if (IntRect(restart_button.sprite.getPosition().x, restart_button.sprite.getPosition().y
+                        , 30, 30).contains(Mouse::getPosition(window)))
+                        Restart(player_answer, player_wins, is_answer_true, sizeof(is_answer_true)/sizeof(is_answer_true[0]), 
+                            is_changing_station_enabled, lives_per_task);
+                    //Station increasing arrow click
+                    else if (IntRect(120, 35, 30, 30).contains(Mouse::getPosition(window)) && current_station < amount_of_stations - 1 && is_changing_station_enabled)
+                        current_station++;
+                    //Station decreasing arrow click
+                    else if (IntRect(10, 35, 30, 30).contains(Mouse::getPosition(window)) && current_station > 0 && is_changing_station_enabled) 
+                        current_station--;
+                    //Answer buttons click
+                    else 
+                        for (int i = 1; i <= 5; i++) {
+                            if (IntRect(110 * i + 20, 450, 80, 80).contains(Mouse::getPosition(window)))
+                                if (player_answer.size() > 0 && is_answer_true[i - 1] != 0) {
+                                    //Forbiding to change station
+                                    is_changing_station_enabled = false;
+                                    //Delete spaces and make player answer string uppercase to compare
+                                    formalised_player_answer = player_answer;
+                                    formalised_player_answer.erase(std::remove(formalised_player_answer.begin(), formalised_player_answer.end(), ' '), formalised_player_answer.end());
+                                    formalised_player_answer.erase(std::remove(formalised_player_answer.begin(), formalised_player_answer.end(), '\n'), formalised_player_answer.end());
+                                    std::transform(formalised_player_answer.begin(), formalised_player_answer.end(), formalised_player_answer.begin(),
+                                        [](wchar_t a) {if ((int(a) >= 1072 && int(a) <= 1103) || (int(a) >= 97 && int(a) <= 122)) return wchar_t(int(a) - 32); return a; });
+                                    //Player answer and answer data comparison
+                                    if (current_station == 2 && (i == 1 || i == 4 || i == 5));
+                                    else if (!answers[current_station][i - 1].std::wstring::compare(formalised_player_answer)) {
+                                        WinTry(is_answer_true[i - 1], win_try_sound, player_wins, formalised_player_answer);
+                                    }
+                                    else LoseTry(is_answer_true[i - 1], lose_try_sound, lives_per_task[i - 1] == 0, lives_per_task[i - 1]);
+                                }
+                        }
+                }
+            }
+
+            if (event.type == event.TextEntered && (event.text.unicode >= 32 || (event.text.unicode >= 44 && event.text.unicode <= 46))) {
+                if (event.key.code != Keyboard::BackSpace && player_answer.size() <= 49)
+                    player_answer.push_back(static_cast<wchar_t>(event.text.unicode));
+                if (player_answer.size() == 16 || player_answer.size() == 33) player_answer.push_back('\n');
+            }
+
+            if (event.type == Event::KeyPressed) {
+                switch (event.key.code) {
+                case Keyboard::BackSpace:
+                    if (player_answer.size() > 0)
+                        player_answer.pop_back();
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+
+        window.clear();
+        window.draw(background.sprite);
+
+        window.draw(restart_button.sprite);
+
+        window.draw(player_answer_input_1);
+        window.draw(player_answer_input_2);
+        window.draw(player_answer_input_3);
+
+
+        input_text.setString(player_answer);
+        window.draw(input_text);
+
+        window.draw(room_choose);
+
+        station_changing_arrow.sprite.setRotation(0.f);
+        station_changing_arrow.sprite.setPosition(120, 35);
+        window.draw(station_changing_arrow.sprite);
+        station_changing_arrow.sprite.setRotation(180.f);
+        station_changing_arrow.sprite.setPosition(40, 65);
+        window.draw(station_changing_arrow.sprite);
+
+
+        switch (current_station) {
+        case 0:
+            station_text.setPosition(60, -2);
+            break;
+        case 1:
+            station_text.setPosition(60, -2);
+            break;
+        case 2:
+            station_text.setPosition(63, -7);
+            break;
+        case 3:
+            station_text.setPosition(62, -4);
+            break;
+        case 4:
+            station_text.setPosition(63, 2);
+            break;
+        case 5:
+            station_text.setPosition(54, -2);
+            break;
+        default:
+            station_text.setPosition(60, -2);
+            break;
+        }
+        station_text.setString(stations_letters[current_station]);
+        window.draw(station_text);
+
+        for (int index = 1; index <= 5; index++) {
+            //Show task number
+            task_number_text.setPosition(120 * index + 20, 385);
+            task_number_text.setString(std::to_string(index));
+            window.draw(task_number_text);
+
+            //Show buttom to confirm answer
+            answer_confirm_button.setPosition(120 * index - 10, 460);
+            if (current_station == 2 && (index == 1 || index == 4 || index == 5)) answer_confirm_button.setFillColor(Color(158, 158, 158, 100));
+            else {
+                if (is_answer_true[index - 1] == 2) answer_confirm_button.setFillColor(Color(158, 158, 158));
+                else if (is_answer_true[index - 1] == 1) answer_confirm_button.setFillColor(Color(102, 255, 51));
+                else answer_confirm_button.setFillColor(Color(255, 51, 51));
+            }
+            window.draw(answer_confirm_button);
+
+            //Show hearts
+            if (is_answer_true[index - 1] == 2) {
+                if (current_station == 2 && (index == 1 || index == 4 || index == 5));
+                else {
+                    if (lives_per_task[index - 1] >= 0) {
+                        heart.sprite.setPosition(120 * index, 480);
+                        window.draw(heart.sprite);
+                    }
+                    if (lives_per_task[index - 1] >= 1) {
+                        heart.sprite.setPosition(120 * index + 10, 490);
+                        window.draw(heart.sprite);
+                    }
+                    if (lives_per_task[index - 1] == 2) {
+                        heart.sprite.setPosition(120 * index + 20, 470);
+                        window.draw(heart.sprite);
+                    }
+                }
+            }
+        }
+        window.display();
+    }
+
+    return 0;
+}
+
+//Restarts try
+void Restart(std::wstring &player_answer, unsigned short &player_wins, unsigned short *is_answer_true, 
+    unsigned short amount_of_stations, bool &is_changing_station_enabled, unsigned short *lives_per_task) {
+    player_answer.erase();
+    player_wins = 0;
+    for (int i = 0; i < amount_of_stations; i++) {
+        is_answer_true[i] = 2;
+        lives_per_task[i] = 2;
+    }
+    is_changing_station_enabled = true;
+}
+
+void WinTry(unsigned short &is_answer_true, Sound &win_try_sound, unsigned short& player_wins, std::wstring &player_answer) {
+    is_answer_true = 1;
+    win_try_sound.play();
+    player_wins++;
+    player_answer.erase();
+}
+
+void LoseTry(unsigned short& is_answer_true, Sound &lose_try_sound, bool is_out_of_lives, unsigned short &lives_per_answer) {
+    lose_try_sound.play();
+    if (is_out_of_lives) {
+        is_answer_true = 0;
+    }
+    else lives_per_answer--;
+}
